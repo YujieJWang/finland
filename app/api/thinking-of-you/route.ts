@@ -20,26 +20,47 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ message: "Please come back inside first." }, { status: 401 });
 
+  const admin = createAdminClient();
   const [{ data: viewer }, { data: recipient }] = await Promise.all([
-    supabase.from("profiles").select("id").eq("id", user.id).maybeSingle(),
-    supabase.from("profiles").select("id").neq("id", user.id).limit(1).maybeSingle(),
+    admin.from("profiles").select("id").eq("id", user.id).maybeSingle(),
+    admin.from("profiles").select("id").neq("id", user.id).limit(1).maybeSingle(),
   ]);
   if (!viewer || !recipient) return NextResponse.json({ message: "Your person isn’t connected yet." }, { status: 403 });
 
-  const { data: pingId, error: reserveError } = await supabase.rpc("reserve_love_ping", {
-    target_recipient: recipient.id,
-    cooldown_seconds: siteConfig.lovePingCooldownSeconds,
-  });
-  if (reserveError?.message.includes("COOLDOWN")) {
-    const { data: latest } = await supabase.from("love_pings").select("created_at").eq("sender_id", user.id).eq("direction", "outbound").order("created_at", { ascending: false }).limit(1).maybeSingle();
-    const retryAfter = cooldownRemaining(latest?.created_at || null, siteConfig.lovePingCooldownSeconds);
-    return NextResponse.json({ message: "Your last little love note is still travelling. ♡", retryAfter }, { status: 429, headers: { "Retry-After": String(retryAfter) } });
+  const cooldownSeconds = siteConfig.lovePingCooldownSeconds;
+  const { data: recent } = await admin
+    .from("love_pings")
+    .select("created_at")
+    .eq("sender_id", user.id)
+    .eq("direction", "outbound")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (recent) {
+    const elapsed = (Date.now() - new Date(recent.created_at).getTime()) / 1000;
+    if (elapsed < cooldownSeconds) {
+      const retryAfter = cooldownRemaining(recent.created_at, cooldownSeconds);
+      return NextResponse.json(
+        { message: "Your last little love note is still travelling. ♡", retryAfter },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } },
+      );
+    }
   }
-  if (reserveError || !pingId) return NextResponse.json({ message: "This love note couldn’t leave just yet." }, { status: 400 });
+
+  const { data: inserted, error: insertError } = await admin
+    .from("love_pings")
+    .insert({ sender_id: user.id, recipient_id: recipient.id, direction: "outbound" })
+    .select("id")
+    .single();
+  if (insertError || !inserted) {
+    console.error("love_ping insert failed", insertError);
+    return NextResponse.json({ message: "This love note couldn’t leave just yet." }, { status: 400 });
+  }
+  const pingId = inserted.id;
 
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  const admin = createAdminClient();
   if (!token || !chatId) {
     await admin.from("love_pings").delete().eq("id", pingId);
     return NextResponse.json({ message: "Telegram isn’t connected yet." }, { status: 503 });
