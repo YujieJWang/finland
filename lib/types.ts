@@ -67,3 +67,10 @@ export type Memory = {
   created_at: string;
   attachments: Attachment[];
 };
+
+export type HomepagePhoto = {
+  id: string;
+  caption: string | null;
+  alt_text: string;
+  signed_url: string;
+};

@@ -50,3 +50,7 @@ export function fileKind(file: Pick<File, "type" | "size">) {
 export function safeFileName(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^-|-$/g, "") || "upload";
 }
+
+export function canDeleteCard(viewerId: string, creatorId: string) {
+  return viewerId === creatorId;
+}

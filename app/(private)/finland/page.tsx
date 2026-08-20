@@ -38,7 +38,7 @@ export default async function FinlandPage() {
             const date = new Date(entry.created_at);
             return (
               <article key={entry.id} style={{ display: "grid", gridTemplateColumns: "58px 1fr", gap: 15 }}>
-                <time style={{ color: "var(--berry)", textAlign: "center", fontWeight: 800, lineHeight: 1.1 }}><small style={{ display: "block", fontSize: 11, letterSpacing: ".1em" }}>{new Intl.DateTimeFormat("en", { month: "short" }).format(date).toUpperCase()}</small><strong className="serif" style={{ fontSize: 27 }}>{date.getDate()}</strong></time>
+                <time style={{ color: "var(--berry)", textAlign: "center", fontWeight: 800, lineHeight: 1.1 }}><small style={{ display: "block", fontSize: 11, letterSpacing: ".1em" }}>{new Intl.DateTimeFormat("en", { month: "short" }).format(date).toLowerCase()}</small><strong className="serif" style={{ fontSize: 27 }}>{date.getDate()}</strong></time>
                 <div className="paper-card" style={{ padding: "clamp(20px, 6vw, 34px)", transform: `rotate(${index % 2 ? ".18" : "-.16"}deg)` }}>
                   <p className="eyebrow">Opened: {entry.cards.title}</p>
                   <div style={{ fontSize: 31, marginBlock: 14 }}>{entry.mood || entry.cards.emoji}</div>

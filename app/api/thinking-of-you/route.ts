@@ -7,12 +7,12 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const messages = [
-  "❤️ She’s thinking about you.",
-  "💌 Someone in Finland misses you.",
-  "🫶 You’ve just received some love from Finland.",
-  "🌍 A little love travelled all the way from Finland.",
-  "💗 Love delivery from Finland.",
-  "🚨 Girlfriend attention requested immediately.",
+  "❤️ she’s thinking about you.",
+  "💌 someone in finland misses you.",
+  "🫶 you’ve just received some love from finland.",
+  "🌍 a little love travelled all the way from finland.",
+  "💗 love delivery from finland.",
+  "🚨 girlfriend attention requested immediately.",
 ] as const;
 
 export async function POST() {
@@ -52,7 +52,7 @@ export async function POST() {
       body: JSON.stringify({
         chat_id: chatId,
         text: messages[Math.floor(Math.random() * messages.length)],
-        reply_markup: { inline_keyboard: [[{ text: "Send some love back 💗", callback_data: `love_back:${pingId}` }]] },
+        reply_markup: { inline_keyboard: [[{ text: "send some love back 💗", callback_data: `love_back:${pingId}` }]] },
       }),
       signal: AbortSignal.timeout(8_000),
     });
@@ -60,8 +60,8 @@ export async function POST() {
     if (!response.ok || !result.ok) throw new Error(result.description || "Telegram rejected the message.");
     await admin.from("love_pings").update({ delivered_at: new Date().toISOString(), telegram_message_id: result.result?.message_id }).eq("id", pingId);
     return NextResponse.json({ delivered: true });
-  } catch (error) {
-    console.error("Telegram send failed", error);
+  } catch {
+    console.error("Telegram notification delivery failed.");
     await admin.from("love_pings").delete().eq("id", pingId);
     return NextResponse.json({ message: "Couldn’t send your love just yet." }, { status: 502 });
   }
