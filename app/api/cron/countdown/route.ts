@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { siteConfig } from "@/config/site";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { daysBetweenDates, zonedDate, zonedHour } from "@/lib/domain";
+import { daysBetweenDates, zonedDate } from "@/lib/domain";
 
 export const runtime = "nodejs";
 
@@ -13,10 +13,6 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
   const timezone = siteConfig.people.finland.timezone;
-  if (zonedHour(timezone, now) !== 0) {
-    return NextResponse.json({ ok: true, skipped: "not-midnight" });
-  }
-
   const todayInHelsinki = zonedDate(timezone, now);
   const daysRemaining = daysBetweenDates(todayInHelsinki, siteConfig.reunionDate);
 

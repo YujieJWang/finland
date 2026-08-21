@@ -226,8 +226,7 @@ A daily Telegram message is sent to the configured group at approximately midnig
 
 ### How it works
 
-- A Vercel cron job fires every hour (`0 * * * *` UTC).
-- The route checks whether Helsinki's local hour is midnight using `Intl.DateTimeFormat` with `Europe/Helsinki`, handling EET/EEST transitions automatically.
+- A Vercel cron job fires once daily at 21:00 UTC (`0 21 * * *`), which is midnight in Helsinki during summer (EEST) and 23:00 during winter (EET).
 - A `countdown_deliveries` table (keyed on Finland's calendar date) ensures at most one message per day, even under retries or duplicate invocations.
 - If Telegram delivery fails, no record is inserted; the next hourly invocation retries.
 

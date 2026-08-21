@@ -275,28 +275,11 @@ test("countdown cron rejects invalid authorization", async () => {
   }
 });
 
-test("countdown skips when Helsinki hour is not midnight", async () => {
-  const [{ NextRequest }, { GET }] = await Promise.all([
-    import("next/server"),
-    import("../app/api/cron/countdown/route"),
-  ]);
-  const previous = process.env.CRON_SECRET;
-  process.env.CRON_SECRET = "test-cron-secret";
-  try {
-    const request = new NextRequest("http://localhost/api/cron/countdown", {
-      headers: { authorization: "Bearer test-cron-secret" },
-    });
-    const response = await GET(request);
-    const body = await response.json();
-    // Unless we're running the test exactly at Helsinki midnight, it should skip
-    if (body.skipped === "not-midnight") {
-      assert.equal(response.status, 200);
-      assert.equal(body.ok, true);
-    }
-  } finally {
-    if (previous === undefined) delete process.env.CRON_SECRET;
-    else process.env.CRON_SECRET = previous;
-  }
+test("countdown cron fires once daily (no hourly midnight gate)", async () => {
+  const vercelJson = await readFile(new URL("../vercel.json", import.meta.url), "utf8");
+  assert.match(vercelJson, /0 21 \* \* \*/);
+  const route = await readFile(new URL("../app/api/cron/countdown/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /zonedHour/);
 });
 
 test("countdown message uses correct singular, plural, reunion-day, and post-reunion wording", () => {
@@ -316,8 +299,6 @@ test("countdown route uses CRON_SECRET, timezone checks, and idempotency table",
   assert.match(route, /CRON_SECRET/);
   assert.match(route, /Bearer/);
   assert.match(route, /status: 401/);
-  assert.match(route, /zonedHour\(/);
-  assert.match(route, /!== 0/);
   assert.match(route, /zonedDate\(/);
   assert.match(route, /daysBetweenDates\(/);
   assert.match(route, /countdown_deliveries/);
