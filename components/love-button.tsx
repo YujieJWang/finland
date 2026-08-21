@@ -57,7 +57,7 @@ export function LoveButton({ latestReturn, initialCount }: { latestReturn: strin
     <aside className="paper-card" style={{ marginTop: 40, padding: "22px 20px", textAlign: "center" }}>
       {latestReturn && (
         <p style={{ margin: "0 0 14px", color: "var(--berry-dark)" }}>
-          💗 He sent some love back <time dateTime={latestReturn}>{latestReturnLabel}</time>
+          💗 some love came back <time dateTime={latestReturn}>{latestReturnLabel}</time>
         </p>
       )}
       <button onClick={sendLove} disabled={state === "sending"} className="button secondary" style={{ minWidth: 190 }}>

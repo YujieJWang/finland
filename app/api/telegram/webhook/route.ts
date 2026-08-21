@@ -149,7 +149,7 @@ async function retryFailedDelivery(admin: AdminClient, updateId: number, token: 
   });
 }
 
-async function handleLoveBack(callback: z.infer<typeof updateSchema>["callback_query"], token: string) {
+async function handleLoveBack(callback: z.infer<typeof updateSchema>["callback_query"], token: string, chatId: string) {
   if (!callback?.data?.match(/^love_back:[0-9a-f-]{36}$/)) return NextResponse.json({ ok: true });
 
   const pingId = callback.data.slice("love_back:".length);
@@ -163,6 +163,12 @@ async function handleLoveBack(callback: z.infer<typeof updateSchema>["callback_q
     .maybeSingle();
   if (!ping) return NextResponse.json({ ok: true });
 
+  const { data: sender } = await admin
+    .from("profiles")
+    .select("timezone")
+    .eq("id", ping.recipient_id)
+    .maybeSingle();
+
   const { error } = await admin.from("love_pings").upsert({
     sender_id: ping.recipient_id,
     recipient_id: ping.sender_id,
@@ -172,12 +178,28 @@ async function handleLoveBack(callback: z.infer<typeof updateSchema>["callback_q
   }, { onConflict: "reply_to_ping_id", ignoreDuplicates: true });
   if (error) return NextResponse.json({ ok: false }, { status: 500 });
 
-  await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ callback_query_id: callback.id, text: "sent some love back 💗" }),
-    signal: AbortSignal.timeout(8_000),
-  }).catch(() => undefined);
+  const location = sender?.timezone === "Asia/Singapore" ? "Singapore" : "Finland";
+  const messages = [
+    `💗 love sent back from ${location}.`,
+    `🫶 some love returned from ${location}.`,
+    `💌 a reply from ${location}: thinking of you too.`,
+  ];
+  const text = messages[Math.floor(Math.random() * messages.length)];
+
+  await Promise.all([
+    fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ callback_query_id: callback.id, text: "sent some love back 💗" }),
+      signal: AbortSignal.timeout(8_000),
+    }).catch(() => undefined),
+    fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text }),
+      signal: AbortSignal.timeout(8_000),
+    }).catch(() => undefined),
+  ]);
   return NextResponse.json({ ok: true });
 }
 
@@ -203,7 +225,7 @@ export async function POST(request: NextRequest) {
       !callback.message ||
       !isAllowedTelegramParticipant(callback.message.chat, callback.from, chatId, allowedUserIds)
     ) return NextResponse.json({ ok: true });
-    return handleLoveBack(callback, token);
+    return handleLoveBack(callback, token, chatId);
   }
 
   const message = parsed.data.message;
