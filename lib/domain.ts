@@ -14,18 +14,6 @@ export function daysUntil(date: string, now = new Date()) {
   return Math.max(0, Math.ceil((target.getTime() - now.getTime()) / 86_400_000));
 }
 
-export function cooldownRemaining(
-  lastSentAt: string | null,
-  cooldownSeconds: number,
-  now = new Date(),
-) {
-  if (!lastSentAt) return 0;
-  return Math.max(
-    0,
-    Math.ceil(cooldownSeconds - (now.getTime() - new Date(lastSentAt).getTime()) / 1000),
-  );
-}
-
 export function zonedHour(timezone: string, now: Date) {
   return Number(
     new Intl.DateTimeFormat("en-GB", {
@@ -34,6 +22,21 @@ export function zonedHour(timezone: string, now: Date) {
       hourCycle: "h23",
     }).format(now),
   );
+}
+
+export function zonedDate(timezone: string, now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+export function daysBetweenDates(from: string, to: string): number {
+  const fromMs = new Date(`${from}T00:00:00Z`).getTime();
+  const toMs = new Date(`${to}T00:00:00Z`).getTime();
+  return Math.round((toMs - fromMs) / 86_400_000);
 }
 
 export function fileKind(file: Pick<File, "type" | "size">) {

@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx tests/*.test.ts",
+    "login-as": "node --env-file=.env.local --import tsx scripts/login-as.ts",
     "seed": "node --env-file=.env.local --import tsx scripts/seed.ts"
   },
   "dependencies": {

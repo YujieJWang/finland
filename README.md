@@ -52,6 +52,14 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Before sign-in works, finish the Supabase setup below and fill `.env.local`.
 
+To preview an allowlisted partner’s account without sending an email, generate a one-time local link and open it in an incognito window:
+
+```bash
+npm run login-as -- her@example.com
+```
+
+The command checks `allowed_emails`, keeps the service-role key server-side, and prints a sensitive one-time URL. Do not share or save that URL.
+
 Run all checks:
 
 ```bash
@@ -136,7 +144,6 @@ Copy `.env.example` to `.env.local`:
 | `TELEGRAM_LLM_COOLDOWN_SECONDS` | Optional         | Minimum gap between model calls; defaults to `10`, maximum `3600`  |
 | `TELEGRAM_LLM_DAILY_LIMIT`      | Optional         | UTC per-chat model-call limit; defaults to `50`, maximum `1000`    |
 | `TELEGRAM_LLM_CONTEXT_MESSAGES` | Optional         | Recent context rows; defaults to `10`, allowed range `2`–`20`      |
-| `LOVE_PING_COOLDOWN_SECONDS`    | Optional         | Server-enforced cooldown; defaults to 300                          |
 
 Never prefix the service-role key, Telegram values, or OpenAI key with `NEXT_PUBLIC_`, and never commit `.env.local`.
 
@@ -213,6 +220,26 @@ npx vercel --prod
 
 In Vercel Project Settings → Domains, add the domain, apply the DNS records Vercel shows, and wait for HTTPS to become active. Then add `https://YOUR_DOMAIN/auth/callback` to Supabase Auth Redirect URLs and re-register the Telegram webhook at the custom domain.
 
+## Reunion countdown
+
+A daily Telegram message is sent to the configured group at approximately midnight in Finland with the number of days until the reunion date.
+
+### How it works
+
+- A Vercel cron job fires every hour (`0 * * * *` UTC).
+- The route checks whether Helsinki's local hour is midnight using `Intl.DateTimeFormat` with `Europe/Helsinki`, handling EET/EEST transitions automatically.
+- A `countdown_deliveries` table (keyed on Finland's calendar date) ensures at most one message per day, even under retries or duplicate invocations.
+- If Telegram delivery fails, no record is inserted; the next hourly invocation retries.
+
+### Setup
+
+1. Run the migration: `supabase db push`
+2. Ensure `CRON_SECRET` is set on Vercel (auto-provisioned for cron jobs; verify under Project Settings → Environment Variables).
+3. `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` must already be configured.
+4. `NEXT_PUBLIC_REUNION_DATE` controls the target date.
+
+The countdown stops sending after the reunion date passes.
+
 ## Adding and editing content
 
 - `/create`: create a letter, choose the other person, upload media, and select immediate/date/mystery unlock behavior.
@@ -241,7 +268,6 @@ Back up the private Storage bucket separately from the Supabase dashboard or Sto
 - Read/open operations are recipient-only database functions, not client-side state.
 - Card deletion is checked in the server action and by the existing creator-only delete RLS policy. Private originals and response uploads are removed before database cascades remove the card records.
 - Homepage photograph metadata is RLS-protected, only the `creator` role can change it, and the browser receives short-lived signed URLs rather than private paths.
-- Love ping reservations use a Postgres advisory transaction lock, preventing concurrent taps from bypassing the cooldown.
 - Telegram updates are claimed and rate-limited in a security-definer transaction before OpenAI is called. Telegram context and delivery state are service-role-only.
 - OpenAI receives bounded Telegram text only, with fixed instructions separate from untrusted messages, no tools, and no application records or private media.
 - React escapes all user text; the app does not render user-supplied HTML.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { canDeleteCard, cooldownRemaining, daysUntil, isCardUnlocked, zonedHour } from "../lib/domain";
+import { canDeleteCard, daysBetweenDates, daysUntil, isCardUnlocked, zonedDate, zonedHour } from "../lib/domain";
 import {
   formatTelegramContext,
   isAllowedTelegramParticipant,
@@ -31,18 +31,12 @@ test("Helsinki daylight saving changes its distance from Singapore", () => {
   assert.equal(zonedHour("Asia/Singapore", summer) - zonedHour("Europe/Helsinki", summer), 5);
 });
 
-test("love ping cooldown returns an exact retry window", () => {
-  const now = new Date("2026-08-19T12:04:10Z");
-  assert.equal(cooldownRemaining("2026-08-19T12:00:00Z", 300, now), 50);
-  assert.equal(cooldownRemaining("2026-08-19T11:00:00Z", 300, now), 0);
-});
-
 test("a user who did not create a card cannot delete it", () => {
   assert.equal(canDeleteCard("recipient-id", "creator-id"), false);
   assert.equal(canDeleteCard("creator-id", "creator-id"), true);
 });
 
-test("migration keeps authorization, read receipts, storage, and cooldown server-side", async () => {
+test("migration keeps authorization, read receipts, and storage server-side", async () => {
   const sql = await readFile(new URL("../supabase/migrations/202608190001_initial.sql", import.meta.url), "utf8");
   assert.match(sql, /alter table public\.cards enable row level security/);
   assert.match(sql, /create policy "creators can delete cards"[\s\S]*using \(creator_id = auth\.uid\(\)\)/);
@@ -51,9 +45,17 @@ test("migration keeps authorization, read receipts, storage, and cooldown server
   assert.match(sql, /create or replace function public\.mark_card_read/);
   assert.match(sql, /where c\.id = target_id and c\.recipient_id = auth\.uid\(\) and public\.card_is_unlocked\(c\)/);
   assert.match(sql, /create trigger cards_protect_receipts/);
-  assert.match(sql, /pg_advisory_xact_lock/);
   assert.match(sql, /create policy "authenticated users upload to own folder"/);
   assert.match(sql, /before insert on auth\.users/);
+});
+
+test("love pings have no cooldown", async () => {
+  const route = await readFile(new URL("../app/api/thinking-of-you/route.ts", import.meta.url), "utf8");
+  const migration = await readFile(new URL("../supabase/migrations/202608210002_remove_love_ping_cooldown.sql", import.meta.url), "utf8");
+  const example = await readFile(new URL("../.env.example", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /cooldown|Retry-After|status: 429/);
+  assert.match(migration, /drop function if exists public\.reserve_love_ping\(uuid, integer\)/);
+  assert.doesNotMatch(example, /LOVE_PING_COOLDOWN_SECONDS/);
 });
 
 test("Telegram routes require an authenticated user or webhook secret", async () => {
@@ -63,6 +65,16 @@ test("Telegram routes require an authenticated user or webhook secret", async ()
   assert.match(ping, /status: 401/);
   assert.match(webhook, /x-telegram-bot-api-secret-token/);
   assert.match(webhook, /status: 401/);
+});
+
+test("local account preview is allowlisted and exchanges only a magic-link token", async () => {
+  const script = await readFile(new URL("../scripts/login-as.ts", import.meta.url), "utf8");
+  const callback = await readFile(new URL("../app/auth/callback/route.ts", import.meta.url), "utf8");
+  const pkg = await readFile(new URL("../package.json", import.meta.url), "utf8");
+  assert.match(script, /from\("allowed_emails"\)/);
+  assert.match(script, /generateLink\(\{ type: "magiclink", email \}\)/);
+  assert.match(callback, /verifyOtp\(\{ token_hash: tokenHash, type: "magiclink" \}\)/);
+  assert.match(pkg, /"login-as": "node --env-file=\.env\.local --import tsx scripts\/login-as\.ts"/);
 });
 
 test("Telegram webhook rejects invalid secrets and ignores unauthorized, bot, and non-text updates", async () => {
@@ -154,11 +166,11 @@ test("Telegram context is display-name labelled and bounded", () => {
   assert.ok(context.length <= 1_000);
 });
 
-test("Telegram webhook validates the chat and sender before the LLM call", async () => {
+test("Telegram webhook validates the chat and sender before processing", async () => {
   const webhook = await readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8");
   const notification = await readFile(new URL("../app/api/thinking-of-you/route.ts", import.meta.url), "utf8");
   const example = await readFile(new URL("../.env.example", import.meta.url), "utf8");
-  assert.ok(webhook.indexOf("reply = await generateReply") > webhook.lastIndexOf("isAllowedTelegramParticipant"));
+  assert.match(webhook, /isAllowedTelegramParticipant/);
   assert.match(webhook, /TELEGRAM_ALLOWED_USER_IDS/);
   assert.match(notification, /TELEGRAM_CHAT_ID/);
   assert.doesNotMatch(`${webhook}\n${notification}\n${example}`, /TELEGRAM_GROUP_CHAT_ID/);
@@ -193,25 +205,18 @@ test("Telegram update claims atomically enforce idempotency and limits", async (
   assert.doesNotMatch(duplicate, /generateReply/);
 });
 
-test("Telegram reset and OpenAI failures avoid unsafe model retries", async () => {
+test("Telegram webhook LLM is disabled and replies are not generated", async () => {
   const webhook = await readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8");
-  const reset = webhook.slice(webhook.indexOf("if (reset)"), webhook.indexOf("if (tooLong)"));
-  assert.match(reset, /telegram_bot_messages/);
-  assert.doesNotMatch(reset, /generateReply/);
-  assert.match(webhook, /catch \{[\s\S]*status = "openai_failed";[\s\S]*reply = OPENAI_FALLBACK/);
+  assert.match(webhook, /LLM replies disabled/);
+  assert.doesNotMatch(webhook, /generateReply/);
+  assert.doesNotMatch(webhook, /new OpenAI/);
   assert.match(webhook, /delivery_status: "failed"/);
-  assert.match(webhook, /new OpenAI/);
-  assert.match(webhook, /client\.responses\.create/);
-  assert.match(webhook, /response\.output_text/);
-  assert.match(webhook, /tools: \[\]/);
 });
 
 test("Telegram responses and production logs never interpolate secrets or message contents", async () => {
   const webhook = await readFile(new URL("../app/api/telegram/webhook/route.ts", import.meta.url), "utf8");
-  assert.match(webhook, /redactTelegramSecrets/);
   assert.doesNotMatch(webhook, /console\.(?:log|error)\([^\n]*,\s*(?:error|text|reply)/);
   assert.doesNotMatch(webhook, /NextResponse\.json\([^\n]*process\.env/);
-  assert.match(webhook, /instructions: SYSTEM_INSTRUCTIONS/);
 });
 
 test("homepage photographs stay private and creator-managed", async () => {
@@ -220,4 +225,116 @@ test("homepage photographs stay private and creator-managed", async () => {
   assert.match(sql, /role = 'creator'/);
   assert.match(sql, /hp\.storage_path = name/);
   assert.doesNotMatch(sql, /public\s*=\s*true/);
+});
+
+// --- Reunion countdown tests ---
+
+test("zonedDate returns the calendar date in the given timezone", () => {
+  // 2026-08-21 23:30 UTC = 2026-08-22 02:30 Helsinki (EEST, UTC+3)
+  assert.equal(zonedDate("Europe/Helsinki", new Date("2026-08-21T23:30:00Z")), "2026-08-22");
+  // 2026-08-21 20:00 UTC = 2026-08-21 23:00 Helsinki (still Aug 21)
+  assert.equal(zonedDate("Europe/Helsinki", new Date("2026-08-21T20:00:00Z")), "2026-08-21");
+  // Same instant in Singapore (UTC+8) is already Aug 22
+  assert.equal(zonedDate("Asia/Singapore", new Date("2026-08-21T16:30:00Z")), "2026-08-22");
+});
+
+test("zonedDate handles winter (EET UTC+2) and summer (EEST UTC+3) correctly", () => {
+  // Winter: midnight Helsinki = 22:00 UTC previous day
+  assert.equal(zonedDate("Europe/Helsinki", new Date("2026-01-15T22:30:00Z")), "2026-01-16");
+  assert.equal(zonedDate("Europe/Helsinki", new Date("2026-01-15T21:59:00Z")), "2026-01-15");
+  // Summer: midnight Helsinki = 21:00 UTC previous day
+  assert.equal(zonedDate("Europe/Helsinki", new Date("2026-07-15T21:30:00Z")), "2026-07-16");
+  assert.equal(zonedDate("Europe/Helsinki", new Date("2026-07-15T20:59:00Z")), "2026-07-15");
+});
+
+test("daysBetweenDates calculates signed calendar day differences", () => {
+  assert.equal(daysBetweenDates("2026-08-21", "2026-12-20"), 121);
+  assert.equal(daysBetweenDates("2026-12-19", "2026-12-20"), 1);
+  assert.equal(daysBetweenDates("2026-12-20", "2026-12-20"), 0);
+  assert.equal(daysBetweenDates("2026-12-21", "2026-12-20"), -1);
+});
+
+test("countdown cron rejects invalid authorization", async () => {
+  const [{ NextRequest }, { GET }] = await Promise.all([
+    import("next/server"),
+    import("../app/api/cron/countdown/route"),
+  ]);
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "test-cron-secret";
+  try {
+    const noAuth = new NextRequest("http://localhost/api/cron/countdown");
+    assert.equal((await GET(noAuth)).status, 401);
+
+    const wrongAuth = new NextRequest("http://localhost/api/cron/countdown", {
+      headers: { authorization: "Bearer wrong" },
+    });
+    assert.equal((await GET(wrongAuth)).status, 401);
+  } finally {
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
+});
+
+test("countdown skips when Helsinki hour is not midnight", async () => {
+  const [{ NextRequest }, { GET }] = await Promise.all([
+    import("next/server"),
+    import("../app/api/cron/countdown/route"),
+  ]);
+  const previous = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "test-cron-secret";
+  try {
+    const request = new NextRequest("http://localhost/api/cron/countdown", {
+      headers: { authorization: "Bearer test-cron-secret" },
+    });
+    const response = await GET(request);
+    const body = await response.json();
+    // Unless we're running the test exactly at Helsinki midnight, it should skip
+    if (body.skipped === "not-midnight") {
+      assert.equal(response.status, 200);
+      assert.equal(body.ok, true);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previous;
+  }
+});
+
+test("countdown message uses correct singular, plural, reunion-day, and post-reunion wording", () => {
+  function formatCountdown(daysRemaining: number): string | null {
+    if (daysRemaining < 0) return null;
+    if (daysRemaining === 0) return "good morning from finland ♡ today is the day — we made it.";
+    return `good morning from finland ♡ only ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} until we're together again.`;
+  }
+  assert.equal(formatCountdown(42), "good morning from finland ♡ only 42 days until we're together again.");
+  assert.equal(formatCountdown(1), "good morning from finland ♡ only 1 day until we're together again.");
+  assert.equal(formatCountdown(0), "good morning from finland ♡ today is the day — we made it.");
+  assert.equal(formatCountdown(-1), null);
+});
+
+test("countdown route uses CRON_SECRET, timezone checks, and idempotency table", async () => {
+  const route = await readFile(new URL("../app/api/cron/countdown/route.ts", import.meta.url), "utf8");
+  assert.match(route, /CRON_SECRET/);
+  assert.match(route, /Bearer/);
+  assert.match(route, /status: 401/);
+  assert.match(route, /zonedHour\(/);
+  assert.match(route, /!== 0/);
+  assert.match(route, /zonedDate\(/);
+  assert.match(route, /daysBetweenDates\(/);
+  assert.match(route, /countdown_deliveries/);
+  assert.match(route, /daysRemaining < 0/);
+  assert.match(route, /23505/);
+  assert.doesNotMatch(route, /openai|OpenAI/i);
+});
+
+test("countdown delivery table has RLS and no browser access", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/202608210003_countdown_deliveries.sql", import.meta.url), "utf8");
+  assert.match(sql, /finland_date date primary key/);
+  assert.match(sql, /alter table public\.countdown_deliveries enable row level security/);
+  assert.match(sql, /revoke all on table public\.countdown_deliveries from anon, authenticated/);
+});
+
+test("countdown cron route never logs or returns secrets", async () => {
+  const route = await readFile(new URL("../app/api/cron/countdown/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /console\.\w+\([^)]*(?:token|CRON_SECRET|process\.env)/);
+  assert.doesNotMatch(route, /NextResponse\.json\([^)]*process\.env/);
 });

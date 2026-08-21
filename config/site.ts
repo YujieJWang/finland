@@ -26,5 +26,4 @@ export const siteConfig = {
     process.env.NEXT_PUBLIC_HOMEPAGE_MESSAGE ||
     "No matter how far away, there’s always something here for you.",
   chapterName: process.env.NEXT_PUBLIC_CHAPTER_NAME || "Our Finland Chapter",
-  lovePingCooldownSeconds: integer(process.env.LOVE_PING_COOLDOWN_SECONDS, 300),
 } as const;

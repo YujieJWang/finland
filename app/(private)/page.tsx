@@ -140,14 +140,7 @@ export default async function HomePage() {
         <CardGrid cards={(cards || []) as CardPreview[]} />
       </section>
 
-      <LoveButton latestReturn={latestReturnAt} />
-      <p
-        className="muted"
-        style={{ textAlign: "center", fontSize: 13, marginTop: 16 }}
-      >
-        {count || 0} little {(count || 0) === 1 ? "reminder" : "reminders"} sent
-        across the distance <span aria-hidden>❤️</span>
-      </p>
+      <LoveButton latestReturn={latestReturnAt} initialCount={count || 0} />
     </div>
   );
 }
