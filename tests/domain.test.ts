@@ -6,12 +6,15 @@ import {
   daysBetweenDates,
   daysUntil,
   isCardUnlocked,
+  zonedDateTime,
+  zonedDateTimeToIso,
   zonedDate,
   zonedHour,
 } from "../lib/domain";
 import {
   formatTelegramContext,
   isAllowedTelegramParticipant,
+  newLetterTelegramMessage,
   parseAllowedTelegramUserIds,
   parseTelegramInteger,
   redactTelegramSecrets,
@@ -296,6 +299,23 @@ test("Telegram reset, numeric limits, and secret redaction are bounded", () => {
   );
 });
 
+test("new-letter Telegram notifications keep mystery titles private", async () => {
+  assert.equal(
+    newLetterTelegramMessage("Read me when you miss home", false),
+    "💌 a new letter is waiting for you: “Read me when you miss home” ♡",
+  );
+  assert.equal(
+    newLetterTelegramMessage("Secret title", true),
+    "💌 a new mystery letter is waiting for you ♡",
+  );
+
+  const action = await readFile(
+    new URL("../app/(private)/create/actions.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(action, /if \(!parsed\.data\.id\)[\s\S]*notifyNewLetter/);
+});
+
 test("Telegram context is display-name labelled and bounded", () => {
   const context = formatTelegramContext(
     Array.from({ length: 13 }, (_, index) => ({
@@ -469,6 +489,33 @@ test("zonedDate handles winter (EET UTC+2) and summer (EEST UTC+3) correctly", (
   );
 });
 
+test("letter unlock times round-trip in Finland time", () => {
+  assert.equal(
+    zonedDateTimeToIso("2026-09-05T05:00", "Europe/Helsinki"),
+    "2026-09-05T02:00:00.000Z",
+  );
+  assert.equal(
+    zonedDateTime("2026-09-05T02:00:00.000Z", "Europe/Helsinki"),
+    "2026-09-05T05:00",
+  );
+  assert.equal(
+    zonedDateTimeToIso("2026-01-15T05:00", "Europe/Helsinki"),
+    "2026-01-15T03:00:00.000Z",
+  );
+});
+
+test("letter editing loads saved media and offers an unsaved preview", async () => {
+  const [page, editor] = await Promise.all([
+    readFile(new URL("../app/(private)/create/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/card-editor.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /attachments!attachments_card_id_fkey/);
+  assert.match(page, /createSignedUrl/);
+  assert.match(editor, /Already attached/);
+  assert.match(editor, /Preview as her/);
+  assert.match(editor, /selectedAttachments/);
+});
+
 test("daysBetweenDates calculates signed calendar day differences", () => {
   assert.equal(daysBetweenDates("2026-08-21", "2026-12-20"), 121);
   assert.equal(daysBetweenDates("2026-12-19", "2026-12-20"), 1);
@@ -527,7 +574,7 @@ test("countdown sends only for milestones and Finland-date occasions", async () 
   );
   assert.equal(
     countdownMessage("2026-09-05", 106),
-    "good morning from singapore ♡ only 106 days until we're together again.\nhappy birthday, my love ♡",
+    "good morning from singapore ♡ only 106 days until we're together again.\nhappy 21st birthday, my love ♡",
   );
   assert.equal(
     countdownMessage("2026-12-20", 0),

@@ -26,6 +26,12 @@ export type TelegramContextMessage = {
   content: string;
 };
 
+export function newLetterTelegramMessage(title: string, mystery: boolean) {
+  return mystery
+    ? "💌 a new mystery letter is waiting for you ♡"
+    : `💌 a new letter is waiting for you: “${title}” ♡`;
+}
+
 export function parseAllowedTelegramUserIds(value: string | undefined) {
   return new Set(
     (value || "")

@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { siteConfig } from "@/config/site";
 import { requireViewer } from "@/lib/auth";
-import { fileKind, safeFileName } from "@/lib/domain";
+import { fileKind, safeFileName, zonedDateTimeToIso } from "@/lib/domain";
 import { createClient } from "@/lib/supabase/server";
+import { newLetterTelegramMessage } from "@/lib/telegram";
 
 export type CardState = { message: string };
 
@@ -20,6 +22,25 @@ const schema = z.object({
   unlockType: z.enum(["immediate", "date", "mystery"]),
   unlockAt: z.string(),
 });
+
+async function notifyNewLetter(title: string, mystery: boolean) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: newLetterTelegramMessage(title, mystery) }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    const result = await response.json() as { ok?: boolean };
+    if (!response.ok || !result.ok) throw new Error("Telegram rejected the notification.");
+  } catch {
+    console.error("New letter Telegram notification failed.");
+  }
+}
 
 export async function saveCard(_: CardState, formData: FormData): Promise<CardState> {
   const parsed = schema.safeParse({
@@ -49,7 +70,9 @@ export async function saveCard(_: CardState, formData: FormData): Promise<CardSt
       content: parsed.data.content,
       song_url: parsed.data.songUrl || null,
       unlock_type: parsed.data.unlockType,
-      unlock_at: parsed.data.unlockType === "immediate" ? null : new Date(parsed.data.unlockAt).toISOString(),
+      unlock_at: parsed.data.unlockType === "immediate"
+        ? null
+        : zonedDateTimeToIso(parsed.data.unlockAt, siteConfig.people.finland.timezone),
     };
 
     const result = parsed.data.id
@@ -71,6 +94,10 @@ export async function saveCard(_: CardState, formData: FormData): Promise<CardSt
         alt_text: type === "image" ? `Photo attached to ${parsed.data.title}` : null,
       });
       if (attachmentError) throw attachmentError;
+    }
+
+    if (!parsed.data.id) {
+      await notifyNewLetter(parsed.data.title, parsed.data.unlockType === "mystery");
     }
   } catch (error) {
     console.error("Card save failed", error);

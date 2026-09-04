@@ -1,7 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { saveCard } from "@/app/(private)/create/actions";
+import { Media } from "@/components/media";
+import { siteConfig } from "@/config/site";
+import { zonedDateTime } from "@/lib/domain";
+import type { Attachment } from "@/lib/types";
 
 type EditableCard = {
   id: string;
@@ -13,6 +17,7 @@ type EditableCard = {
   song_url: string | null;
   unlock_type: "immediate" | "date" | "mystery";
   unlock_at: string | null;
+  attachments: Attachment[];
 };
 
 export function CardEditor({
@@ -26,17 +31,32 @@ export function CardEditor({
   const [title, setTitle] = useState(card?.title || "");
   const [subtitle, setSubtitle] = useState(card?.subtitle || "");
   const [emoji, setEmoji] = useState(card?.emoji || "💌");
+  const [content, setContent] = useState(card?.content || "");
+  const [songUrl, setSongUrl] = useState(card?.song_url || "");
+  const [files, setFiles] = useState<File[]>([]);
   const [unlockType, setUnlockType] = useState(
     card?.unlock_type || "immediate",
   );
-  const localUnlockAt = card?.unlock_at
-    ? new Date(
-        new Date(card.unlock_at).getTime() -
-          new Date(card.unlock_at).getTimezoneOffset() * 60_000,
-      )
-        .toISOString()
-        .slice(0, 16)
-    : "";
+  const [unlockAt, setUnlockAt] = useState(
+    card?.unlock_at
+      ? zonedDateTime(card.unlock_at, siteConfig.people.finland.timezone)
+      : "",
+  );
+  const preview = useRef<HTMLDialogElement>(null);
+  const selectedAttachments = useMemo<Attachment[]>(
+    () => files.map((file, index) => ({
+      id: `selected-${index}`,
+      storage_path: "",
+      type: file.type.startsWith("image/") ? "image" : "audio",
+      alt_text: file.type.startsWith("image/") ? `Photo attached to ${title}` : null,
+      signed_url: URL.createObjectURL(file),
+    })),
+    [files, title],
+  );
+  useEffect(
+    () => () => selectedAttachments.forEach(({ signed_url: url }) => url && URL.revokeObjectURL(url)),
+    [selectedAttachments],
+  );
 
   return (
     <div
@@ -112,7 +132,8 @@ export function CardEditor({
             className="input"
             name="content"
             maxLength={50_000}
-            defaultValue={card?.content || ""}
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
             style={{ minHeight: 280 }}
             required
           />
@@ -126,7 +147,8 @@ export function CardEditor({
             name="songUrl"
             type="url"
             pattern="https://.*"
-            defaultValue={card?.song_url || ""}
+            value={songUrl}
+            onChange={(event) => setSongUrl(event.target.value)}
             placeholder="https://…"
           />
         </label>
@@ -152,9 +174,11 @@ export function CardEditor({
               className="input"
               name="unlockAt"
               type="datetime-local"
-              defaultValue={localUnlockAt}
+              value={unlockAt}
+              onChange={(event) => setUnlockAt(event.target.value)}
               required
             />
+            <small className="muted">Finland time</small>
           </label>
         )}
         <label className="field">
@@ -165,9 +189,19 @@ export function CardEditor({
             type="file"
             accept="image/jpeg,image/png,image/webp,image/heic,audio/*"
             multiple
+            onChange={(event) => setFiles(Array.from(event.target.files || []))}
           />
           <small className="muted">Private, up to 10 MB each.</small>
         </label>
+        {card?.attachments.length ? (
+          <div>
+            <p className="muted" style={{ fontSize: 13 }}>Already attached</p>
+            <Media attachments={card.attachments} />
+          </div>
+        ) : null}
+        <button className="button secondary" type="button" onClick={() => preview.current?.showModal()}>
+          Preview as her
+        </button>
         <button className="button" disabled={pending}>
           {pending
             ? "Saving your letter…"
@@ -204,6 +238,22 @@ export function CardEditor({
           </div>
         </article>
       </aside>
+
+      <dialog ref={preview} className="letter-preview-dialog">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <p className="eyebrow">Preview as her</p>
+          <button className="button secondary small" type="button" onClick={() => preview.current?.close()}>Close</button>
+        </div>
+        <article className="paper-card" style={{ marginTop: 14, padding: "clamp(24px, 8vw, 58px)" }}>
+          <div aria-hidden style={{ fontSize: 46 }}>{emoji || "💌"}</div>
+          <h1 className="serif" style={{ fontSize: "clamp(38px, 10vw, 62px)", lineHeight: 1.02, fontWeight: 500, margin: "26px 0 14px" }}>{title || "Read me when…"}</h1>
+          {subtitle && <p className="muted" style={{ fontSize: 17, lineHeight: 1.6 }}>{subtitle}</p>}
+          <div style={{ height: 1, background: "var(--line)", marginBlock: 32 }} />
+          <div className="letter-body">{content || "Your letter will appear here."}</div>
+          {songUrl.startsWith("https://") && <p style={{ marginTop: 28 }}><a href={songUrl} target="_blank" rel="noreferrer" style={{ color: "var(--berry)", fontWeight: 700 }}>♫ Listen to the song I left with this</a></p>}
+          <div style={{ marginTop: 36 }}><Media attachments={[...(card?.attachments || []), ...selectedAttachments]} /></div>
+        </article>
+      </dialog>
     </div>
   );
 }

@@ -13,9 +13,18 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   const supabase = await createClient();
   const { data: recipients } = await supabase.from("profiles").select("id,display_name").neq("id", viewer.id);
   const cardResult = id
-    ? await supabase.from("cards").select("id,recipient_id,title,subtitle,emoji,content,song_url,unlock_type,unlock_at").eq("id", id).eq("creator_id", viewer.id).maybeSingle()
+    ? await supabase.from("cards").select("id,recipient_id,title,subtitle,emoji,content,song_url,unlock_type,unlock_at,attachments!attachments_card_id_fkey(id,storage_path,type,alt_text,response_id)").eq("id", id).eq("creator_id", viewer.id).maybeSingle()
     : { data: null };
   if (id && !cardResult.data) notFound();
+  const card = cardResult.data
+    ? {
+        ...cardResult.data,
+        attachments: await Promise.all(cardResult.data.attachments.filter((item) => !item.response_id).map(async (item) => {
+          const { data } = await supabase.storage.from("private-media").createSignedUrl(item.storage_path, 3600);
+          return { ...item, signed_url: data?.signedUrl };
+        })),
+      }
+    : null;
 
   return (
     <div className="page-shell" style={{ paddingBlock: "32px 72px" }}>
@@ -25,7 +34,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         <h1 className="serif" style={{ margin: "8px 0", fontSize: "clamp(40px, 10vw, 64px)", fontWeight: 500 }}>{id ? "Tend to this letter" : "Leave one for them"}</h1>
         <p className="muted">Write it now. Let it be found exactly when it’s needed.</p>
       </header>
-      <CardEditor card={cardResult.data as Parameters<typeof CardEditor>[0]["card"]} recipients={(recipients || []) as { id: string; display_name: string }[]} />
+      <CardEditor card={card as Parameters<typeof CardEditor>[0]["card"]} recipients={(recipients || []) as { id: string; display_name: string }[]} />
     </div>
   );
 }
