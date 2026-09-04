@@ -5,7 +5,8 @@ const integer = (value: string | undefined, fallback: number) => {
 
 export const siteConfig = {
   title: "Read Me When You Need Me",
-  description: "A private little place for two people, even when they are far apart.",
+  description:
+    "A private little place for two people, even when they are far apart.",
   people: {
     singapore: {
       name: process.env.NEXT_PUBLIC_PERSON_ONE_NAME || "You",
@@ -23,7 +24,7 @@ export const siteConfig = {
   reunionDate: process.env.NEXT_PUBLIC_REUNION_DATE || "2026-12-20",
   monthsary: { day: 3, anchor: "2026-10", count: 30 },
   specialOccasions: [
-    { date: "09-05", message: "happy birthday, my love ♡" },
+    { date: "09-05", message: "happy 21st birthday, my love ♡" },
   ],
   distanceKm: integer(process.env.NEXT_PUBLIC_DISTANCE_KM, 9000),
   homepageMessage:
