@@ -21,6 +21,10 @@ export const siteConfig = {
     },
   },
   reunionDate: process.env.NEXT_PUBLIC_REUNION_DATE || "2026-12-20",
+  monthsary: { day: 3, anchor: "2026-10", count: 30 },
+  specialOccasions: [
+    { date: "09-05", message: "happy birthday, my love ♡" },
+  ],
   distanceKm: integer(process.env.NEXT_PUBLIC_DISTANCE_KM, 9000),
   homepageMessage:
     process.env.NEXT_PUBLIC_HOMEPAGE_MESSAGE ||
