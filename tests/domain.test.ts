@@ -557,9 +557,12 @@ test("countdown cron fires once daily (no hourly midnight gate)", async () => {
   assert.doesNotMatch(route, /zonedHour/);
 });
 
-test("countdown sends only for milestones and Finland-date occasions", async () => {
+test("countdown sends daily and adds milestones and Finland-date occasions", async () => {
   const { countdownMessage } = await import("../lib/countdown");
-  assert.equal(countdownMessage("2026-09-04", 107), null);
+  assert.equal(
+    countdownMessage("2026-09-04", 107),
+    "good morning from singapore ♡ only 107 days until we're together again.",
+  );
   assert.equal(
     countdownMessage("2026-09-13", 98),
     "good morning from singapore ♡ only 98 days until we're together again.\n14 weeks left.",

@@ -17,8 +17,6 @@ export function countdownMessage(today: string, daysRemaining: number) {
     : null;
   const occasion = siteConfig.specialOccasions.find(({ date }) => today.endsWith(date));
 
-  if (!weekDecreased && !monthDecreased && !monthsary && !occasion) return null;
-
   const lines = [
     `good morning from singapore ♡ only ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} until we're together again.`,
   ];
